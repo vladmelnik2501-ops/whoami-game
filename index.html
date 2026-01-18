@@ -6,7 +6,7 @@
     <title>Кто я? - Игра для компании</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👤</text></svg>">
 </head>
 <body>
@@ -334,5 +334,30 @@
             });
         }
     </script>
+    <script>
+    // Отладка для GitHub Pages
+    console.log('GitHub Pages URL:', window.location.href);
+    
+    // Проверка PeerJS
+    if (typeof Peer === 'undefined') {
+        console.error('PeerJS не загружен!');
+        alert('Ошибка: PeerJS не загружен. Проверьте подключение к интернету.');
+    } else {
+        console.log('PeerJS загружен успешно');
+    }
+    
+    // Автофокус на имени
+    document.addEventListener('DOMContentLoaded', function() {
+        const nameInput = document.getElementById('playerName');
+        if (nameInput) {
+            nameInput.focus();
+            // Восстановить сохраненное имя
+            const savedName = localStorage.getItem('whoami_playername');
+            if (savedName) {
+                nameInput.value = savedName;
+            }
+        }
+    });
+</script>
 </body>
 </html>

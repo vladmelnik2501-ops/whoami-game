@@ -14,9 +14,9 @@ class WhoAmIGame {
             allWordsSubmitted: false
         };
         
-        // PeerJS соединения (используем структуру из рабочего чата)
+        // PeerJS соединения
         this.peer = null;
-        this.connections = {}; // Изменено с Map на Object как в рабочем чате
+        this.connections = {};
         this.hostConnection = null;
         
         // Флаги
@@ -26,9 +26,6 @@ class WhoAmIGame {
         // История сообщений
         this.messageHistory = [];
         this.MAX_HISTORY = 100;
-        
-        // Хранилище отправленных сообщений
-        this.sentMessages = new Set();
         
         // Инициализация
         this.init();
@@ -45,6 +42,8 @@ class WhoAmIGame {
         if (savedName) {
             document.getElementById('playerName').value = savedName;
         }
+        
+        console.log('Игра инициализирована для GitHub Pages');
     }
     
     initSound() {
@@ -110,13 +109,6 @@ class WhoAmIGame {
                 this.hideModal();
             }
         });
-        
-        // Обработка закрытия вкладки
-        window.addEventListener('beforeunload', (e) => {
-            if (this.state.gameStarted || this.state.roomCode) {
-                this.cleanup();
-            }
-        });
     }
     
     showScreen(screenName) {
@@ -147,7 +139,7 @@ class WhoAmIGame {
         }, duration);
     }
     
-    addChatMessage(text, sender = 'Система', type = 'system', chatType = 'lobby', messageId = null) {
+    addChatMessage(text, sender = 'Система', type = 'system', chatType = 'lobby') {
         let chatElement;
         if (chatType === 'game') {
             chatElement = document.getElementById('gameChatMessages');
@@ -155,10 +147,7 @@ class WhoAmIGame {
             chatElement = document.getElementById('chatMessages');
         }
         
-        if (!chatElement) {
-            console.error('Chat element not found for type:', chatType);
-            return;
-        }
+        if (!chatElement) return;
         
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
@@ -177,7 +166,7 @@ class WhoAmIGame {
         if (type === 'chat' && this.messageSound && sender !== this.state.playerName) {
             try {
                 this.messageSound.currentTime = 0;
-                this.messageSound.play().catch(e => console.log('Не удалось воспроизвести звук'));
+                this.messageSound.play();
             } catch (error) {
                 console.log('Ошибка воспроизведения звука:', error);
             }
@@ -201,7 +190,7 @@ class WhoAmIGame {
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
         // Добавляем сообщение сразу в свой чат
-        this.addChatMessage(message, this.state.playerName, 'chat', chatType, messageId);
+        this.addChatMessage(message, this.state.playerName, 'chat', chatType);
         
         // Сохраняем в историю
         this.messageHistory.push({
@@ -209,9 +198,7 @@ class WhoAmIGame {
             sender: this.state.playerName,
             senderId: this.state.playerId,
             timestamp: timestamp,
-            type: 'chat',
-            chatType: chatType,
-            messageId: messageId
+            chatType: chatType
         });
         
         if (this.messageHistory.length > this.MAX_HISTORY) {
@@ -225,7 +212,6 @@ class WhoAmIGame {
             playerName: this.state.playerName,
             playerId: this.state.playerId,
             chatType: chatType,
-            messageId: messageId,
             timestamp: timestamp
         };
         
@@ -235,7 +221,6 @@ class WhoAmIGame {
         } else {
             // Если клиент, отправляем хосту
             if (this.hostConnection && this.hostConnection.open) {
-                console.log('Клиент отправляет сообщение хосту:', chatData);
                 this.hostConnection.send(chatData);
             } else {
                 this.showNotification('Нет соединения с хостом');
@@ -245,9 +230,6 @@ class WhoAmIGame {
         input.value = '';
         input.focus();
     }
-    
-    // ============ СОЗДАНИЕ И ПОДКЛЮЧЕНИЕ К КОМНАТЕ ============
-    // Используем логику из рабочего чата
     
     async createRoom() {
         const playerName = document.getElementById('playerName').value.trim();
@@ -263,29 +245,51 @@ class WhoAmIGame {
         this.playerAdded = false;
         this.connectionAttempts = 0;
         this.messageHistory = [];
-        this.sentMessages.clear();
         this.connections = {};
         
-        await this.initPeerAsHost();
+        console.log('Создание комнаты с кодом:', this.state.roomCode);
         
-        this.state.players = [{
-            id: this.state.playerId,
-            name: playerName,
-            isHost: true,
-            connectionId: this.peer.id
-        }];
-        
-        this.showScreen('lobby');
-        this.updateLobbyUI();
-        
-        // Очищаем чат и добавляем приветственное сообщение
-        const chatMessages = document.getElementById('chatMessages');
-        if (chatMessages) {
-            chatMessages.innerHTML = '';
-            this.addChatMessage(`Вы создали комнату "${this.state.roomCode}"`);
+        try {
+            // Инициализируем Peer как хост
+            this.peer = new Peer(this.state.roomCode, {
+                debug: 0,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' }
+                    ]
+                }
+            });
+            
+            this.setupPeerEvents();
+            
+            this.state.players = [{
+                id: this.state.playerId,
+                name: playerName,
+                isHost: true,
+                connectionId: this.state.roomCode
+            }];
+            
+            this.showScreen('lobby');
+            this.updateLobbyUI();
+            
+            // Очищаем чат и добавляем приветственное сообщение
+            const chatMessages = document.getElementById('chatMessages');
+            if (chatMessages) {
+                chatMessages.innerHTML = '';
+                this.addChatMessage(`Вы создали комнату "${this.state.roomCode}"`);
+                this.addChatMessage('Отправьте код друзьям, чтобы они могли присоединиться');
+            }
+            
+            this.showNotification(`Комната создана! Код: ${this.state.roomCode}`);
+            
+        } catch (error) {
+            console.error('Ошибка создания комнаты:', error);
+            this.showNotification('Не удалось создать комнату', 5000);
         }
-        
-        this.showNotification(`Комната создана! Код: ${this.state.roomCode}`);
     }
     
     async joinRoom() {
@@ -309,114 +313,80 @@ class WhoAmIGame {
         this.playerAdded = false;
         this.connectionAttempts = 0;
         this.messageHistory = [];
-        this.sentMessages.clear();
         this.connections = {};
         
-        await this.initPeerAsClient();
+        console.log('Подключение к комнате:', roomCode);
         
-        this.showScreen('lobby');
-        
-        // Очищаем чат
-        const chatMessages = document.getElementById('chatMessages');
-        if (chatMessages) {
-            chatMessages.innerHTML = '';
-            this.addChatMessage(`Подключаемся к комнате "${roomCode}"...`);
-        }
-    }
-    
-    // ============ PEER JS ЛОГИКА ИЗ РАБОЧЕГО ЧАТА ============
-    
-    async initPeerAsHost() {
         try {
-            console.log('Инициализация хоста...');
-            
-            const hostId = this.state.roomCode;
-            
-            this.peer = new Peer(hostId, {
-                debug: 2,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:global.stun.twilio.com:3478' }
-                    ]
-                }
-            });
-            
-            this.setupPeerEvents();
-            
-        } catch (error) {
-            console.error('Ошибка инициализации хоста:', error);
-            this.showNotification('Не удалось создать комнату', 5000);
-        }
-    }
-    
-    async initPeerAsClient() {
-        try {
-            console.log('Инициализация клиента...');
-            
+            // Инициализируем Peer как клиент
             const clientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
             this.peer = new Peer(clientId, {
-                debug: 2,
+                debug: 0,
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:global.stun.twilio.com:3478' }
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' }
                     ]
                 }
             });
             
             this.setupPeerEvents();
             
+            this.showScreen('lobby');
+            
+            // Очищаем чат
+            const chatMessages = document.getElementById('chatMessages');
+            if (chatMessages) {
+                chatMessages.innerHTML = '';
+                this.addChatMessage(`Подключаемся к комнате "${roomCode}"...`);
+            }
+            
         } catch (error) {
-            console.error('Ошибка инициализации клиента:', error);
+            console.error('Ошибка подключения:', error);
             this.showNotification('Не удалось подключиться к серверу', 5000);
         }
     }
     
-    // Настройка обработчиков событий Peer (из рабочего чата)
     setupPeerEvents() {
         this.peer.on('open', (id) => {
-            console.log('Peer ID:', id);
+            console.log('Peer подключен с ID:', id);
+            
             if (this.state.isHost) {
-                console.log(`✅ Комната создана (${this.state.roomCode}). Ожидание участников...`);
+                console.log('Хост готов. Код комнаты:', this.state.roomCode);
+                this.showNotification('Комната готова. Ждем игроков...');
             } else {
+                console.log('Клиент готов. Подключаемся к хосту...');
                 this.connectToHost();
             }
         });
         
         this.peer.on('connection', (conn) => {
-            console.log('Новое подключение:', conn.peer);
+            console.log('Новое подключение от:', conn.peer);
             this.setupConnection(conn);
         });
         
         this.peer.on('error', (err) => {
-            console.error('Peer error:', err);
+            console.error('PeerJS ошибка:', err);
+            
             if (err.type === 'peer-unavailable') {
-                this.showNotification('Комната не найдена. Проверьте код комнаты.');
+                this.showNotification('Комната не найдена. Проверьте код.');
             } else if (err.type === 'unavailable-id') {
-                // Код занят - генерируем новый
-                this.state.roomCode = this.generateRoomCode();
-                this.initPeerAsHost();
+                this.showNotification('Код занят. Попробуйте другой.');
+            } else if (err.type === 'network') {
+                this.showNotification('Проблемы с сетью. Проверьте подключение.');
             } else {
-                this.showNotification('Ошибка: ' + err.message);
+                this.showNotification('Ошибка подключения: ' + err.type);
             }
-        });
-        
-        this.peer.on('disconnected', () => {
-            this.showNotification('Соединение потеряно. Попытка переподключения...');
-            setTimeout(() => {
-                if (this.peer && !this.peer.disconnected) {
-                    this.peer.reconnect();
-                }
-            }, 1000);
         });
     }
     
-    // Подключение к хосту (создателю комнаты)
     connectToHost() {
-        if (this.connectionAttempts >= 5) {
-            this.showNotification('Не удалось подключиться к комнате. Проверьте код.');
+        if (this.connectionAttempts >= 3) {
+            this.showNotification('Не удалось подключиться. Попробуйте позже.');
             return;
         }
         
@@ -425,13 +395,23 @@ class WhoAmIGame {
         
         const conn = this.peer.connect(this.state.roomCode, {
             reliable: true,
+            serialization: 'json',
             metadata: {
                 playerId: this.state.playerId,
                 playerName: this.state.playerName
             }
         });
         
+        // Таймаут подключения
+        const timeout = setTimeout(() => {
+            if (!this.hostConnection) {
+                console.log('Таймаут подключения');
+                this.connectToHost();
+            }
+        }, 10000);
+        
         conn.on('open', () => {
+            clearTimeout(timeout);
             console.log('Подключение к хосту установлено');
             this.setupConnection(conn);
             this.hostConnection = conn;
@@ -445,13 +425,15 @@ class WhoAmIGame {
                 });
                 this.playerAdded = true;
             }
+            
+            this.showNotification('Успешно подключено к комнате!');
         });
         
         conn.on('error', (err) => {
-            console.error('Connection error:', err);
-            this.showNotification('Ошибка подключения к хосту');
+            clearTimeout(timeout);
+            console.error('Ошибка подключения:', err);
             
-            if (this.connectionAttempts < 5) {
+            if (this.connectionAttempts < 3) {
                 setTimeout(() => {
                     this.connectToHost();
                 }, 2000);
@@ -459,13 +441,13 @@ class WhoAmIGame {
         });
     }
     
-    // Настройка соединения (из рабочего чата)
     setupConnection(conn) {
         const peerId = conn.peer;
         
         this.connections[peerId] = conn;
         
         conn.on('data', (data) => {
+            console.log('Получены данные от', peerId, ':', data);
             this.handleIncomingData(data, peerId);
         });
         
@@ -477,7 +459,7 @@ class WhoAmIGame {
             this.removePlayerByConnectionId(peerId);
             
             if (Object.keys(this.connections).length === 0 && !this.state.isHost) {
-                this.showNotification('❌ Соединение с комнатой потеряно');
+                this.showNotification('Соединение с комнатой потеряно');
             }
         });
         
@@ -490,19 +472,17 @@ class WhoAmIGame {
             console.log('Новый клиент подключился:', conn.metadata);
             
             // Отправляем подтверждение подключения
-            conn.send({
-                type: 'CONNECTION_ESTABLISHED',
-                playerId: conn.metadata?.playerId || conn.peer,
-                players: this.state.players
-            });
+            setTimeout(() => {
+                conn.send({
+                    type: 'CONNECTION_ESTABLISHED',
+                    playerId: conn.metadata?.playerId || conn.peer,
+                    players: this.state.players
+                });
+            }, 500);
         }
     }
     
-    // ============ ОБРАБОТКА ВХОДЯЩИХ ДАННЫХ ============
-    
     handleIncomingData(data, fromPeer) {
-        console.log('Получены данные от', fromPeer, ':', data);
-        
         switch (data.type) {
             case 'CONNECTION_ESTABLISHED':
                 this.state.players = data.players || [];
@@ -513,11 +493,9 @@ class WhoAmIGame {
                 
             case 'JOIN_REQUEST':
                 if (this.state.isHost) {
-                    console.log('Хост получил JOIN_REQUEST от:', data.playerName);
                     const existingPlayer = this.state.players.find(p => p.id === data.playerId);
                     
                     if (!existingPlayer) {
-                        console.log('Хост добавляет нового игрока:', data.playerName);
                         this.addPlayer({
                             id: data.playerId,
                             name: data.playerName,
@@ -534,17 +512,14 @@ class WhoAmIGame {
                 break;
                 
             case 'CHAT_MESSAGE':
-                // Пропускаем свои собственные сообщения (они уже показаны)
-                if (data.playerId === this.state.playerId) {
-                    return;
-                }
+                // Пропускаем свои собственные сообщения
+                if (data.playerId === this.state.playerId) return;
                 
                 // Добавляем сообщение в чат
-                this.addChatMessage(data.message, data.playerName, 'chat', data.chatType, data.messageId);
+                this.addChatMessage(data.message, data.playerName, 'chat', data.chatType);
                 
                 // Если это хост, рассылаем всем остальным клиентам
                 if (this.state.isHost) {
-                    console.log('Хост рассылает сообщение всем клиентам');
                     this.broadcastToPlayers(data, fromPeer);
                 }
                 break;
@@ -575,16 +550,8 @@ class WhoAmIGame {
                 this.state.allWordsSubmitted = true;
                 this.showGameScreen();
                 break;
-                
-            case 'PLAYER_LEFT':
-                if (this.state.isHost) {
-                    this.removePlayerByConnectionId(data.connectionId);
-                }
-                break;
         }
     }
-    
-    // ============ ОСНОВНЫЕ ФУНКЦИИ ИГРЫ ============
     
     handleWordSubmitted(data) {
         this.state.words[data.targetPlayerId] = {
@@ -616,14 +583,13 @@ class WhoAmIGame {
         this.updateWordScreen();
     }
     
-    // Широковещательная рассылка всем подключенным (из рабочего чата)
     broadcastToPlayers(data, excludePeer = null) {
         Object.keys(this.connections).forEach(peerId => {
             if (peerId !== excludePeer && this.connections[peerId].open) {
                 try {
                     this.connections[peerId].send(data);
                 } catch (err) {
-                    console.error('Ошибка отправки сообщения:', err);
+                    console.error('Ошибка отправки:', err);
                 }
             }
         });
@@ -661,11 +627,6 @@ class WhoAmIGame {
                 type: 'PLAYERS_UPDATE',
                 players: this.state.players
             });
-            
-            // Если игрок был в процессе написания слова
-            if (this.state.gameStarted && !this.state.allWordsSubmitted) {
-                this.updateWordScreen();
-            }
         }
     }
     
@@ -934,39 +895,8 @@ class WhoAmIGame {
         this.updateLobbyUI();
     }
     
-    cleanup() {
-        if (this.peer) {
-            // Отправляем сообщение о выходе всем
-            if (this.state.isHost) {
-                this.broadcastToPlayers({
-                    type: 'PLAYER_LEFT',
-                    playerId: this.state.playerId,
-                    connectionId: this.peer.id
-                });
-            } else if (this.hostConnection) {
-                this.hostConnection.send({
-                    type: 'PLAYER_LEFT',
-                    playerId: this.state.playerId,
-                    connectionId: this.peer.id
-                });
-            }
-            
-            // Закрываем все соединения
-            Object.keys(this.connections).forEach(peerId => {
-                try {
-                    this.connections[peerId].close();
-                } catch (e) {}
-            });
-            
-            // Закрываем peer
-            this.peer.destroy();
-        }
-    }
-    
     leaveLobby() {
         if (confirm('Вы уверены, что хотите покинуть комнату?')) {
-            this.cleanup();
-            
             // Сбрасываем состояние
             this.state = {
                 screen: 'login',
@@ -983,11 +913,15 @@ class WhoAmIGame {
             
             this.connections = {};
             this.hostConnection = null;
-            this.peer = null;
+            
+            if (this.peer) {
+                this.peer.destroy();
+                this.peer = null;
+            }
+            
             this.playerAdded = false;
             this.connectionAttempts = 0;
             this.messageHistory = [];
-            this.sentMessages.clear();
             
             document.getElementById('roomCode').value = '';
             document.getElementById('chatMessages').innerHTML = `
