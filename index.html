@@ -2,12 +2,19 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Кто я? - Игра для компании</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👤</text></svg>">
+    
+    <!-- Мета-теги для iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="theme-color" content="#4361ee">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👤</text></svg>">
 </head>
 <body>
     <div class="container">
@@ -52,6 +59,9 @@
                         <li>Угадывайте своё слово по подсказкам!</li>
                     </ol>
                     <p class="tech-info"><i class="fas fa-wifi"></i> Игра работает через прямое соединение между устройствами (P2P)</p>
+                    <p class="ios-warning" id="iosWarning" style="display: none; color: #f72585; margin-top: 10px; font-size: 0.9em;">
+                        <i class="fas fa-mobile-alt"></i> Для iPhone рекомендуется использовать Safari или Chrome
+                    </p>
                 </div>
             </div>
         </div>
@@ -254,110 +264,78 @@
         </div>
     </div>
 
-    <script src="game.js"></script>
+    <!-- iOS полифиллы и проверки -->
     <script>
-        // Обновляем время в приветственном сообщении
-        function updateWelcomeTime() {
-            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const timeElements = document.querySelectorAll('.time');
-            timeElements.forEach(el => {
-                if (el.textContent === '--:--' || el.id === 'currentTime' || el.id === 'gameTime') {
-                    el.textContent = time;
-                }
-            });
+        // Проверка устройства и браузера
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const isChromeIOS = /CriOS/.test(navigator.userAgent);
+        
+        console.log('Device info:', {
+            isIOS: isIOS,
+            isSafari: isSafari,
+            isChromeIOS: isChromeIOS,
+            userAgent: navigator.userAgent
+        });
+        
+        // Показываем предупреждение для iOS
+        if (isIOS) {
+            document.getElementById('iosWarning').style.display = 'block';
         }
         
-        // Автоматическое обновление времени в сообщениях
-        setInterval(function() {
-            const messages = document.querySelectorAll('.message .time:not([data-time])');
-            messages.forEach(function(timeEl) {
-                if (!timeEl.dataset.time || timeEl.dataset.time === '--:--') {
-                    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    timeEl.textContent = time;
-                    timeEl.dataset.time = time;
+        // Базовая проверка WebRTC поддержки
+        function checkWebRTCSupport() {
+            const required = ['RTCPeerConnection', 'RTCSessionDescription', 'RTCIceCandidate'];
+            const missing = required.filter(api => !window[api]);
+            
+            if (missing.length > 0 && isIOS) {
+                console.warn('Missing WebRTC APIs:', missing);
+                
+                // Для старых Safari добавляем полифиллы
+                if (typeof RTCPeerConnection === 'undefined') {
+                    window.RTCPeerConnection = window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
                 }
-            });
-        }, 60000);
+            }
+            
+            return missing.length === 0;
+        }
         
-        // Обновляем время при загрузке
+        // Проверяем при загрузке
         document.addEventListener('DOMContentLoaded', function() {
-            updateWelcomeTime();
+            if (!checkWebRTCSupport() && isIOS) {
+                console.log('WebRTC may have limited support on this iOS device');
+            }
             
-            // Обновляем время каждую минуту
-            setInterval(updateWelcomeTime, 60000);
-            
-            // Фокус на поле имени при загрузке
+            // Фокус на поле имени
             document.getElementById('playerName').focus();
             
-            // Автозаглавные буквы для кода комнаты
+            // Автозаглавные для кода комнаты
             document.getElementById('roomCode').addEventListener('input', function(e) {
                 this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
             });
             
-            // Сохраняем имя в localStorage
+            // Сохраняем имя
             document.getElementById('playerName').addEventListener('input', function(e) {
                 localStorage.setItem('whoami_playername', this.value);
             });
             
-            // Восстанавливаем имя из localStorage
+            // Восстанавливаем имя
             const savedName = localStorage.getItem('whoami_playername');
             if (savedName) {
                 document.getElementById('playerName').value = savedName;
             }
             
-            // Обработка нажатия Enter на экране входа
+            // Обработка Enter
             document.getElementById('playerName').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    document.getElementById('createRoomBtn').click();
-                }
+                if (e.key === 'Enter') document.getElementById('createRoomBtn').click();
             });
             
             document.getElementById('roomCode').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    document.getElementById('joinRoomBtn').click();
-                }
+                if (e.key === 'Enter') document.getElementById('joinRoomBtn').click();
             });
         });
-        
-        // Отображение информации о подключении для GitHub Pages
-        if (window.location.hostname.includes('github.io')) {
-            console.log('🌐 Игра запущена на GitHub Pages');
-            console.log('📱 Для игры нужны минимум 2 разных устройства');
-            console.log('🔗 Ссылка для подключения второго игрока:');
-            console.log(window.location.href);
-            
-            // Добавляем информацию в консоль для отладки
-            window.addEventListener('load', function() {
-                setTimeout(function() {
-                    console.log('✅ Игра загружена. Создайте комнату или введите код.');
-                }, 1000);
-            });
-        }
     </script>
-    <script>
-    // Отладка для GitHub Pages
-    console.log('GitHub Pages URL:', window.location.href);
-    
-    // Проверка PeerJS
-    if (typeof Peer === 'undefined') {
-        console.error('PeerJS не загружен!');
-        alert('Ошибка: PeerJS не загружен. Проверьте подключение к интернету.');
-    } else {
-        console.log('PeerJS загружен успешно');
-    }
-    
-    // Автофокус на имени
-    document.addEventListener('DOMContentLoaded', function() {
-        const nameInput = document.getElementById('playerName');
-        if (nameInput) {
-            nameInput.focus();
-            // Восстановить сохраненное имя
-            const savedName = localStorage.getItem('whoami_playername');
-            if (savedName) {
-                nameInput.value = savedName;
-            }
-        }
-    });
-</script>
+
+    <script src="game.js"></script>
 </body>
 </html>
