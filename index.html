@@ -14,7 +14,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="format-detection" content="telephone=no">
     <meta name="theme-color" content="#4361ee">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👤</text></svg>">
+    <link rel="preconnect" href="https://0.peerjs.com">
+    <link rel="dns-prefetch" href="https://0.peerjs.com">
 </head>
 <body>
     <div class="container">
@@ -265,36 +268,46 @@
     </div>
 
     <!-- iOS полифиллы и проверки -->
+        <!-- iOS полифиллы и проверки -->
     <script>
         // Проверка устройства и браузера
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const isChromeIOS = /CriOS/.test(navigator.userAgent);
+        const isWebKit = isIOS || isSafari;
         
         console.log('Device info:', {
             isIOS: isIOS,
             isSafari: isSafari,
             isChromeIOS: isChromeIOS,
+            isWebKit: isWebKit,
             userAgent: navigator.userAgent
         });
         
         // Показываем предупреждение для iOS
-        if (isIOS) {
-            document.getElementById('iosWarning').style.display = 'block';
+        if (isWebKit) {
+            const iosWarning = document.getElementById('iosWarning');
+            if (iosWarning) {
+                iosWarning.style.display = 'block';
+                if (isIOS && !isChromeIOS) {
+                    iosWarning.innerHTML = '<i class="fas fa-mobile-alt"></i> Для iPhone рекомендуется использовать Chrome или Telegram браузер';
+                }
+            }
         }
         
         // Базовая проверка WebRTC поддержки
         function checkWebRTCSupport() {
             const required = ['RTCPeerConnection', 'RTCSessionDescription', 'RTCIceCandidate'];
+            
+            // Полифиллы для Safari
+            if (typeof RTCPeerConnection === 'undefined') {
+                window.RTCPeerConnection = window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+            }
+            
             const missing = required.filter(api => !window[api]);
             
-            if (missing.length > 0 && isIOS) {
+            if (missing.length > 0 && isWebKit) {
                 console.warn('Missing WebRTC APIs:', missing);
-                
-                // Для старых Safari добавляем полифиллы
-                if (typeof RTCPeerConnection === 'undefined') {
-                    window.RTCPeerConnection = window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
-                }
             }
             
             return missing.length === 0;
@@ -302,8 +315,8 @@
         
         // Проверяем при загрузке
         document.addEventListener('DOMContentLoaded', function() {
-            if (!checkWebRTCSupport() && isIOS) {
-                console.log('WebRTC may have limited support on this iOS device');
+            if (!checkWebRTCSupport() && isWebKit) {
+                console.log('WebRTC may have limited support on this iOS/Safari device');
             }
             
             // Фокус на поле имени
@@ -335,7 +348,7 @@
             });
         });
     </script>
-
+    <script src="safari-fix.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

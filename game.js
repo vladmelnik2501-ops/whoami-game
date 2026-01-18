@@ -14,14 +14,17 @@ class WhoAmIGame {
             allWordsSubmitted: false
         };
         
-        // Определение устройства
+        // Определение браузера
         this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         this.isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        this.isWebKit = this.isSafari || this.isIOS;
         this.isChromeIOS = /CriOS/.test(navigator.userAgent);
         
-        console.log('Game initialized for:', {
-            device: this.isIOS ? 'iOS' : 'Other',
-            browser: this.isSafari ? 'Safari' : this.isChromeIOS ? 'Chrome iOS' : 'Other',
+        console.log('Browser detection:', {
+            isIOS: this.isIOS,
+            isSafari: this.isSafari,
+            isWebKit: this.isWebKit,
+            isChromeIOS: this.isChromeIOS,
             userAgent: navigator.userAgent
         });
         
@@ -53,6 +56,11 @@ class WhoAmIGame {
         if (savedName) {
             document.getElementById('playerName').value = savedName;
         }
+        
+        // Для Safari: предварительная инициализация WebRTC
+        if (this.isWebKit) {
+            this.initializeWebRTCForSafari();
+        }
     }
     
     initSound() {
@@ -61,6 +69,34 @@ class WhoAmIGame {
             this.messageSound.preload = 'auto';
         } catch (error) {
             console.log('Звук недоступен:', error);
+        }
+    }
+    
+    initializeWebRTCForSafari() {
+        console.log('Initializing WebRTC for Safari/WebKit');
+        
+        // Полифиллы для Safari
+        if (typeof RTCPeerConnection === 'undefined') {
+            window.RTCPeerConnection = window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+        }
+        
+        if (typeof RTCSessionDescription === 'undefined') {
+            window.RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription;
+        }
+        
+        if (typeof RTCIceCandidate === 'undefined') {
+            window.RTCIceCandidate = window.RTCIceCandidate || window.mozRTCIceCandidate;
+        }
+        
+        // Запрашиваем разрешения заранее (требуется для iOS 14.3+)
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            // Запрашиваем фиктивные разрешения для активации WebRTC
+            navigator.mediaDevices.getUserMedia({ audio: false, video: false })
+                .then((stream) => {
+                    console.log('Safari WebRTC permissions granted');
+                    stream.getTracks().forEach(track => track.stop());
+                })
+                .catch(err => console.log('Safari permissions (non-critical):', err.message));
         }
     }
     
@@ -189,17 +225,21 @@ class WhoAmIGame {
         }
     }
     
-    // Получение настроек PeerJS в зависимости от устройства
-    getPeerConfig(isHost = false) {
-        // Базовые настройки для всех устройств
-        const baseConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' },
-                // TURN серверы для обхода NAT (особенно важно для мобильных)
+    // Получение настроек PeerJS для разных браузеров
+    getPeerConfig() {
+        // Базовые ICE серверы
+        let iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+        ];
+        
+        // Для Safari добавляем TURN серверы (обязательно!)
+        if (this.isWebKit) {
+            console.log('Adding TURN servers for Safari/WebKit');
+            iceServers = iceServers.concat([
                 {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
@@ -214,27 +254,64 @@ class WhoAmIGame {
                     urls: 'turn:openrelay.metered.ca:443?transport=tcp',
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
+                },
+                // Резервные TURN серверы
+                {
+                    urls: 'turn:numb.viagenie.ca',
+                    username: 'webrtc@live.com',
+                    credential: 'muazkh'
+                },
+                {
+                    urls: 'turn:turn.bistri.com:80',
+                    username: 'homeo',
+                    credential: 'homeo'
                 }
-            ],
-            iceCandidatePoolSize: 5
-        };
-        
-        // Для iOS/Safari добавляем специфические настройки
-        if (this.isIOS || this.isSafari) {
-            console.log('Применяем iOS/Safari настройки WebRTC');
-            
-            // Увеличиваем время ожидания для мобильных
-            baseConfig.iceTransportPolicy = 'all';
-            baseConfig.bundlePolicy = 'max-bundle';
-            baseConfig.rtcpMuxPolicy = 'require';
-            
-            // Для старых Safari
-            if (this.isSafari && typeof RTCPeerConnection === 'undefined') {
-                window.RTCPeerConnection = window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
-            }
+            ]);
         }
         
-        return baseConfig;
+        const config = {
+            iceServers: iceServers,
+            iceCandidatePoolSize: 5,
+            iceTransportPolicy: 'all'
+        };
+        
+        // Специфичные настройки для Safari
+        if (this.isWebKit) {
+            config.sdpSemantics = 'unified-plan';
+            config.bundlePolicy = 'max-bundle';
+            config.rtcpMuxPolicy = 'require';
+        }
+        
+        return config;
+    }
+    
+    getPeerOptions(isHost = false) {
+        const options = {
+            debug: 2,
+            config: this.getPeerConfig(),
+            // Важно для Safari!
+            constraints: {
+                optional: [
+                    { DtlsSrtpKeyAgreement: true },
+                    { RtpDataChannels: true }
+                ]
+            }
+        };
+        
+        // Для iOS/Safari используем облачный сервер с HTTPS
+        if (this.isIOS || this.isSafari) {
+            console.log('Using cloud PeerJS server for iOS/Safari');
+            Object.assign(options, {
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true,
+                // Проброс ICE кандидатов через сервер (важно для NAT)
+                proxied: true
+            });
+        }
+        
+        return options;
     }
     
     sendChatMessage(chatType = 'lobby') {
@@ -311,27 +388,17 @@ class WhoAmIGame {
         this.messageHistory = [];
         this.connections = {};
         
-        console.log('Создание комнаты с кодом:', this.state.roomCode, 'на устройстве:', this.isIOS ? 'iOS' : 'другое');
+        console.log('Creating room for:', this.isWebKit ? 'Safari/WebKit' : 'Other browser');
         
         try {
-            // Настройки Peer в зависимости от устройства
-            const peerOptions = {
-                debug: 1,
-                config: this.getPeerConfig(true)
-            };
-            
-            // Для iOS используем облачный сервер PeerJS
-            if (this.isIOS || this.isSafari) {
-                console.log('Используем облачный сервер PeerJS для iOS/Safari');
-                Object.assign(peerOptions, {
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true
-                });
+            // Для Safari: дополнительная задержка перед созданием Peer
+            if (this.isWebKit) {
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
             
-            this.peer = new Peer(this.state.roomCode, peerOptions);
+            const options = this.getPeerOptions(true);
+            this.peer = new Peer(this.state.roomCode, options);
+            
             this.setupPeerEvents();
             
             this.state.players = [{
@@ -351,29 +418,18 @@ class WhoAmIGame {
                 this.addChatMessage(`Вы создали комнату "${this.state.roomCode}"`);
                 this.addChatMessage('Отправьте код друзьям, чтобы они могли присоединиться');
                 
-                // Советы для iOS
-                if (this.isIOS) {
-                    this.addChatMessage('💡 Совет для iPhone: убедитесь, что Wi-Fi/мобильный интернет работает стабильно');
+                // Особое сообщение для Safari
+                if (this.isWebKit) {
+                    this.addChatMessage('🔧 Используется режим совместимости для Safari');
+                    this.addChatMessage('Подключение может занять 10-15 секунд...');
                 }
             }
             
             this.showNotification(`Комната создана! Код: ${this.state.roomCode}`);
             
         } catch (error) {
-            console.error('Ошибка создания комнаты:', error);
-            
-            // Пользовательское сообщение для iOS
-            if (this.isIOS) {
-                this.showNotification(
-                    'На iPhone попробуйте:\n' +
-                    '1. Обновить страницу\n' +
-                    '2. Использовать Safari или Chrome\n' +
-                    '3. Проверить подключение к интернету',
-                    5000
-                );
-            } else {
-                this.showNotification('Не удалось создать комнату', 5000);
-            }
+            console.error('Create room error:', error);
+            this.handleSafariError(error);
         }
     }
     
@@ -387,7 +443,7 @@ class WhoAmIGame {
         }
         
         if (!roomCode || roomCode.length !== 6) {
-            this.showNotification('Введите корректный код комнаты (6 символов)');
+            this.showNotification('Введите корректный код комнаты');
             return;
         }
         
@@ -400,29 +456,18 @@ class WhoAmIGame {
         this.messageHistory = [];
         this.connections = {};
         
-        console.log('Подключение к комнате:', roomCode, 'на устройстве:', this.isIOS ? 'iOS' : 'другое');
+        console.log('Joining room from:', this.isWebKit ? 'Safari/WebKit' : 'Other browser');
         
         try {
-            const clientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            
-            // Настройки Peer в зависимости от устройства
-            const peerOptions = {
-                debug: 1,
-                config: this.getPeerConfig(false)
-            };
-            
-            // Для iOS используем облачный сервер PeerJS
-            if (this.isIOS || this.isSafari) {
-                console.log('Используем облачный сервер PeerJS для iOS/Safari');
-                Object.assign(peerOptions, {
-                    host: '0.peerjs.com',
-                    port: 443,
-                    path: '/',
-                    secure: true
-                });
+            // Для Safari: задержка и уникальный ID
+            if (this.isWebKit) {
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
             
-            this.peer = new Peer(clientId, peerOptions);
+            const clientId = 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const options = this.getPeerOptions(false);
+            
+            this.peer = new Peer(clientId, options);
             this.setupPeerEvents();
             
             this.showScreen('lobby');
@@ -433,41 +478,57 @@ class WhoAmIGame {
                 chatMessages.innerHTML = '';
                 this.addChatMessage(`Подключаемся к комнате "${roomCode}"...`);
                 
-                if (this.isIOS) {
-                    this.addChatMessage('⏳ Подключение на iPhone может занять несколько секунд...');
+                if (this.isWebKit) {
+                    this.addChatMessage('🔧 Подключение через Safari...');
+                    this.addChatMessage('Это может занять до 15 секунд');
                 }
             }
             
         } catch (error) {
-            console.error('Ошибка подключения:', error);
-            
-            if (this.isIOS) {
-                this.showNotification(
-                    'Проблема подключения на iPhone\n' +
-                    '1. Проверьте код комнаты\n' +
-                    '2. Убедитесь, что создатель комнаты онлайн\n' +
-                    '3. Попробуйте другой браузер',
-                    5000
-                );
+            console.error('Join room error:', error);
+            this.handleSafariError(error);
+        }
+    }
+    
+    handleSafariError(error) {
+        let message = 'Ошибка подключения';
+        
+        if (this.isWebKit) {
+            if (error.type === 'peer-unavailable') {
+                message = 'Safari: не удалось подключиться к комнате\nПопробуйте:\n1. Обновить страницу\n2. Проверить код комнаты';
+            } else if (error.type === 'network') {
+                message = 'Safari: проблемы с сетью\nРазрешите WebRTC в настройках Safari';
+            } else if (error.message && error.message.includes('SSL')) {
+                message = 'Safari: ошибка безопасности\nПопробуйте другой браузер на iOS';
+            } else if (error.type) {
+                message = `Safari: ${error.type}\nПопробуйте Chrome для iOS или Telegram`;
             } else {
-                this.showNotification('Не удалось подключиться к серверу', 5000);
+                message = 'Safari: неизвестная ошибка\nПопробуйте обновить страницу';
             }
+        }
+        
+        this.showNotification(message, 5000);
+        
+        // Предложение использовать альтернативный браузер
+        if (this.isIOS) {
+            setTimeout(() => {
+                if (confirm('На iPhone лучше использовать:\n\n• Chrome для iOS\n• Браузер Telegram\n• Firefox для iOS\n\nОткрыть в Chrome?')) {
+                    window.open(window.location.href, '_blank');
+                }
+            }, 2000);
         }
     }
     
     setupPeerEvents() {
         this.peer.on('open', (id) => {
-            console.log('Peer подключен с ID:', id);
+            console.log('✅ Peer connected:', id);
             
             if (this.state.isHost) {
-                console.log('Хост готов. Код комнаты:', this.state.roomCode);
-                this.showNotification('Комната готова. Ждем игроков...');
+                this.showNotification('Комната готова к подключениям');
             } else {
-                console.log('Клиент готов. Подключаемся к хосту...');
-                
-                // Для iOS добавляем небольшую задержку перед подключением
-                if (this.isIOS) {
-                    setTimeout(() => this.connectToHost(), 500);
+                // Для Safari: дополнительная задержка перед подключением к хосту
+                if (this.isWebKit) {
+                    setTimeout(() => this.connectToHost(), 1000);
                 } else {
                     this.connectToHost();
                 }
@@ -475,24 +536,13 @@ class WhoAmIGame {
         });
         
         this.peer.on('connection', (conn) => {
-            console.log('Новое подключение от:', conn.peer);
+            console.log('🔗 New connection:', conn.peer);
             this.setupConnection(conn);
         });
         
         this.peer.on('error', (err) => {
-            console.error('PeerJS ошибка:', err);
-            
-            if (err.type === 'peer-unavailable') {
-                this.showNotification('Комната не найдена. Проверьте код.');
-            } else if (err.type === 'unavailable-id') {
-                this.showNotification('Код занят. Попробуйте другой.');
-            } else if (err.type === 'network') {
-                this.showNotification('Проблемы с сетью. Проверьте подключение.');
-            } else if (err.type === 'ssl-unavailable' && this.isIOS) {
-                this.showNotification('Проблема с SSL. Попробуйте другой браузер.');
-            } else {
-                this.showNotification('Ошибка подключения: ' + err.type);
-            }
+            console.error('PeerJS error:', err);
+            this.handleSafariError(err);
         });
         
         this.peer.on('disconnected', () => {
@@ -509,39 +559,41 @@ class WhoAmIGame {
     }
     
     connectToHost() {
-        if (this.connectionAttempts >= 3) {
-            this.showNotification('Не удалось подключиться. Попробуйте позже.');
+        if (this.connectionAttempts >= 5) {
+            this.showNotification('Не удалось подключиться');
             return;
         }
         
         this.connectionAttempts++;
-        console.log(`Попытка подключения ${this.connectionAttempts} к хосту:`, this.state.roomCode);
+        
+        // Для Safari: увеличиваем таймаут
+        const timeout = this.isWebKit ? 20000 : 10000;
+        
+        console.log(`Connection attempt ${this.connectionAttempts} (timeout: ${timeout}ms)`);
         
         const conn = this.peer.connect(this.state.roomCode, {
             reliable: true,
             serialization: 'json',
             metadata: {
                 playerId: this.state.playerId,
-                playerName: this.state.playerName
+                playerName: this.state.playerName,
+                isWebKit: this.isWebKit
             }
         });
         
-        // Увеличиваем таймаут для мобильных
-        const timeoutDuration = this.isIOS ? 15000 : 10000;
-        const timeout = setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             if (!this.hostConnection) {
-                console.log('Таймаут подключения');
+                console.log('Connection timeout');
                 this.connectToHost();
             }
-        }, timeoutDuration);
+        }, timeout);
         
         conn.on('open', () => {
-            clearTimeout(timeout);
-            console.log('Подключение к хосту установлено');
+            clearTimeout(timeoutId);
+            console.log('✅ Connected to host');
             this.setupConnection(conn);
             this.hostConnection = conn;
             
-            // Отправляем запрос на присоединение
             if (!this.playerAdded) {
                 conn.send({
                     type: 'JOIN_REQUEST',
@@ -551,19 +603,16 @@ class WhoAmIGame {
                 this.playerAdded = true;
             }
             
-            this.showNotification('Успешно подключено к комнате!');
+            this.showNotification('Успешно подключено!');
         });
         
         conn.on('error', (err) => {
-            clearTimeout(timeout);
-            console.error('Ошибка подключения:', err);
+            clearTimeout(timeoutId);
+            console.error('Connection error:', err);
             
-            if (this.connectionAttempts < 3) {
-                // Увеличиваем задержку между попытками для iOS
-                const delay = this.isIOS ? 3000 : 2000;
-                setTimeout(() => {
-                    this.connectToHost();
-                }, delay);
+            if (this.connectionAttempts < 5) {
+                const delay = this.isWebKit ? 3000 : 2000;
+                setTimeout(() => this.connectToHost(), delay);
             }
         });
     }
@@ -1090,11 +1139,45 @@ class WhoAmIGame {
             this.showNotification('Вы покинули комнату');
         }
     }
+    
+    // Добавим метод для проверки WebRTC
+    checkWebRTC() {
+        const support = {
+            RTCPeerConnection: !!window.RTCPeerConnection,
+            RTCSessionDescription: !!window.RTCSessionDescription,
+            RTCIceCandidate: !!window.RTCIceCandidate,
+            dataChannel: false
+        };
+        
+        if (support.RTCPeerConnection) {
+            try {
+                const pc = new RTCPeerConnection();
+                support.dataChannel = !!pc.createDataChannel;
+                pc.close();
+            } catch (e) {}
+        }
+        
+        console.log('WebRTC support:', support);
+        return support;
+    }
 }
 
 // Инициализация игры после загрузки страницы
 window.addEventListener('DOMContentLoaded', () => {
     const game = new WhoAmIGame();
     window.game = game;
+    
+    // Проверка WebRTC при загрузке
+    const support = game.checkWebRTC();
+    
+    if (game.isWebKit && (!support.RTCPeerConnection || !support.dataChannel)) {
+        console.warn('Limited WebRTC support in Safari');
+        const iosWarning = document.getElementById('iosWarning');
+        if (iosWarning) {
+            iosWarning.innerHTML += 
+                '<br><strong>⚠️ WebRTC может не работать в Safari. Используйте Chrome для iOS.</strong>';
+        }
+    }
+    
     console.log('Игра загружена. Для отладки используйте window.game');
 });

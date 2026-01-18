@@ -829,3 +829,81 @@ input[type="text"]:focus {
         box-shadow: none;
     }
 }
+/* Стили для предупреждений Safari */
+.safari-warning {
+    background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+    color: white;
+    padding: 15px;
+    border-radius: var(--border-radius);
+    margin: 15px 0;
+    text-align: center;
+    border-left: 5px solid #ff4757;
+}
+
+.safari-warning h4 {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.safari-tips {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 10px;
+    font-size: 0.9rem;
+}
+
+.safari-tips ul {
+    margin: 5px 0 0 20px;
+}
+
+/* Анимация подключения для Safari */
+.connecting-animation {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 20px;
+}
+
+.connecting-animation .dot {
+    width: 8px;
+    height: 8px;
+    background: var(--primary);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+.connecting-animation .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.connecting-animation .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Мобильная оптимизация для Safari */
+@supports (-webkit-touch-callout: none) {
+    input, textarea, select {
+        font-size: 16px !important; /* Предотвращает масштабирование в iOS */
+    }
+    
+    .btn {
+        -webkit-appearance: none; /* Убирает стили Safari по умолчанию */
+    }
+    
+    .modal {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) 
+                env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+}
